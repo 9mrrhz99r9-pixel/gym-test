@@ -1,0 +1,702 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>SCHOOL GYM</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- React & ReactDOM -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <!-- Babel (ブラウザでJSXを変換) -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background-color: #E4E4E7;
+      margin: 0;
+      padding: 0;
+    }
+    /* スクロールバー非表示 */
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    .no-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex items-center justify-center sm:p-4">
+  <div id="root" class="w-full flex justify-center"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+    const initialSets = () => [
+      { id: 1, weight: '', reps: '' },
+      { id: 2, weight: '', reps: '' },
+      { id: 3, weight: '', reps: '' },
+    ];
+
+    // 推定MAX計算（Epley式）
+    const estimate = (weight, reps) => {
+      const w = Number(weight);
+      const r = Number(reps);
+
+      if (!Number.isFinite(w) || !Number.isFinite(r) || w <= 0 || r <= 0) {
+        return 0;
+      }
+      if (r === 1) return w;
+
+      return w * (1 + r / 30);
+    };
+
+    function App() {
+      const [tab, setTab] = useState('HOME');
+
+      // トレーニング
+      const [exercise, setExercise] = useState('');
+      const [memo, setMemo] = useState('');
+      const [sets, setSets] = useState(initialSets);
+      const [history, setHistory] = useState([]);
+
+      // プロフィール
+      const [profileName, setProfileName] = useState('');
+      const [profileClass, setProfileClass] = useState('');
+
+      // QR入退室状態（'OUT' = 退室中, 'IN' = 入室中）
+      const [gymStatus, setGymStatus] = useState('OUT');
+      const [lastActionTime, setLastActionTime] = useState(null);
+
+      // タイマー
+      const [duration, setDuration] = useState(60);
+      const [remaining, setRemaining] = useState(60);
+      const [running, setRunning] = useState(false);
+
+      // タイマー処理
+      useEffect(() => {
+        if (!running || remaining <= 0) {
+          if (remaining <= 0) {
+            setRunning(false);
+          }
+          return;
+        }
+
+        const timer = setTimeout(() => {
+          setRemaining((value) => value - 1);
+        }, 1000);
+
+        return () => clearTimeout(timer);
+      }, [running, remaining]);
+
+      // 入力済みのセット
+      const validSets = sets.filter(
+        (s) => Number(s.weight) > 0 && Number(s.reps) > 0
+      );
+
+      // 今回の最高推定MAX
+      const bestMax = validSets.length
+        ? Math.max(...validSets.map((s) => estimate(s.weight, s.reps)))
+        : 0;
+
+      // セットの入力変更
+      const updateSet = (id, field, value) => {
+        setSets((old) =>
+          old.map((s) => (s.id === id ? { ...s, [field]: value } : s))
+        );
+      };
+
+      // セット追加
+      const addSet = () => {
+        const nextId = Math.max(0, ...sets.map((s) => s.id)) + 1;
+        setSets((old) => [...old, { id: nextId, weight: '', reps: '' }]);
+      };
+
+      // 最後のセットを削除
+      const removeSet = () => {
+        if (sets.length <= 1) return;
+        setSets((old) => old.slice(0, -1));
+      };
+
+      // トレーニング保存
+      const saveTraining = () => {
+        if (!exercise.trim() || validSets.length === 0) {
+          return;
+        }
+
+        const record = {
+          id: Date.now(),
+          exercise: exercise.trim(),
+          memo,
+          date: new Date().toLocaleString('ja-JP'),
+          sets: validSets.map((s) => ({ ...s })),
+          bestMax,
+        };
+
+        setHistory((old) => [record, ...old]);
+        setExercise('');
+        setSets(initialSets());
+        setMemo('');
+        setTab('HISTORY');
+      };
+
+      // タイマー開始
+      const startTimer = () => {
+        if (remaining <= 0) {
+          setRemaining(duration);
+        }
+        setRunning(true);
+      };
+
+      // 時間表示
+      const formatTime = (n) => {
+        return `${Math.floor(n / 60)}:${String(n % 60).padStart(2, '0')}`;
+      };
+
+      // 入退室切り替え
+      const toggleGymStatus = (nextStatus) => {
+        setGymStatus(nextStatus);
+        setLastActionTime(new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }));
+      };
+
+      return (
+        <div className="w-full max-w-[400px] h-[100dvh] sm:h-[780px] bg-[#F4F4F5] sm:rounded-[32px] sm:border-[6px] sm:border-[#111111] shadow-2xl flex flex-col overflow-hidden">
+          {/* ヘッダー */}
+          <header className="flex items-center justify-between px-4 py-3.5 bg-white border-b border-[#E4E4E7] shrink-0">
+            <div className="w-20 flex items-center">
+              {tab !== 'HOME' && (
+                <button
+                  onClick={() => setTab('HOME')}
+                  className="flex items-center text-[14px] font-bold text-[#111111] hover:opacity-70 active:scale-95 transition"
+                >
+                  <span className="text-[20px] leading-none mr-1">‹</span>
+                  <span>戻る</span>
+                </button>
+              )}
+            </div>
+
+            <div className="text-[17px] font-black tracking-wider text-[#111111]">
+              SCHOOL <span className="text-[#555555]">GYM</span>
+            </div>
+
+            <div className="w-20 text-right">
+              <span className="text-[11px] font-semibold text-[#555555]">
+                VER 0.4
+              </span>
+            </div>
+          </header>
+
+          {/* メインコンテンツ */}
+          <main className="flex-1 overflow-y-auto no-scrollbar p-5 pb-10">
+            {/* HOME画面 */}
+            {tab === 'HOME' && (
+              <div>
+                <p className="text-[12px] font-bold text-[#555555] tracking-widest">
+                  WELCOME TO
+                </p>
+                <h1 className="text-[32px] font-black text-[#111111] leading-tight mt-0.5">
+                  SCHOOL GYM
+                </h1>
+                <p className="text-[13px] font-semibold text-[#555555] mb-5">
+                  YOUR TRAINING PARTNER.
+                </p>
+
+                <div className="bg-[#111111] rounded-2xl p-5 mb-5">
+                  <p className="text-[12px] text-[#D4D4D8] font-semibold">
+                    CURRENT GYM USERS
+                  </p>
+                  <p className="text-[36px] font-black text-white my-1.5">
+                    -- 人
+                  </p>
+                  <p className="text-[12px] text-[#A1A1AA] font-medium">
+                    データ未連携（Supabase導入後に表示）
+                  </p>
+                </div>
+
+                <h2 className="text-[13px] font-extrabold text-[#555555] tracking-wider mt-3 mb-2.5">
+                  MENU
+                </h2>
+
+                <div className="space-y-2.5">
+                  {[
+                    ['TRAINING', 'セット別トレーニング記録'],
+                    ['HISTORY', 'トレーニング履歴'],
+                    ['TOOLS', 'タイマー'],
+                    ['QR', '入退室用QR画面'],
+                    ['ACCOUNT', 'プロフィール'],
+                  ].map(([name, desc]) => (
+                    <button
+                      key={name}
+                      onClick={() => setTab(name)}
+                      className="w-full bg-white rounded-xl p-4 flex justify-between items-center border border-[#E4E4E7] hover:border-[#111111] transition text-left"
+                    >
+                      <div>
+                        <div className="text-[16px] font-extrabold text-[#111111]">
+                          {name}
+                        </div>
+                        <div className="text-[13px] text-[#555555]">
+                          {desc}
+                        </div>
+                      </div>
+                      <span className="text-[22px] text-[#111111] font-semibold">
+                        ›
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* TRAINING画面 */}
+            {tab === 'TRAINING' && (
+              <div>
+                <h1 className="text-[26px] font-black text-[#111111]">
+                  TRAINING
+                </h1>
+                <p className="text-[13px] text-[#555555] mb-4">
+                  トレーニングを記録する
+                </p>
+
+                <div className="bg-white rounded-2xl p-4 mb-4 border border-[#E4E4E7]">
+                  <label className="block text-[13px] font-bold text-[#111111] mb-1.5">
+                    種目名
+                  </label>
+                  <input
+                    type="text"
+                    value={exercise}
+                    onChange={(e) => setExercise(e.target.value)}
+                    placeholder="例：ベンチプレス / スクワット"
+                    className="w-full bg-[#F4F4F5] rounded-lg px-3 py-2.5 text-[15px] text-[#111111] mb-3 border border-[#E4E4E7] focus:outline-none focus:border-[#111111]"
+                  />
+
+                  <label className="block text-[13px] font-bold text-[#111111] mb-1.5">
+                    メモ
+                  </label>
+                  <input
+                    type="text"
+                    value={memo}
+                    onChange={(e) => setMemo(e.target.value)}
+                    placeholder="メモを入力（任意）"
+                    className="w-full bg-[#F4F4F5] rounded-lg px-3 py-2.5 text-[15px] text-[#111111] mb-3 border border-[#E4E4E7] focus:outline-none focus:border-[#111111]"
+                  />
+
+                  <div className="grid grid-cols-3 text-center mt-3 mb-1.5">
+                    <span className="text-[12px] font-bold text-[#555555]">
+                      セット
+                    </span>
+                    <span className="text-[12px] font-bold text-[#555555]">
+                      kg
+                    </span>
+                    <span className="text-[12px] font-bold text-[#555555]">
+                      回数
+                    </span>
+                  </div>
+
+                  <div className="space-y-2">
+                    {sets.map((s, index) => (
+                      <div
+                        key={s.id}
+                        className="grid grid-cols-3 items-center gap-2"
+                      >
+                        <div className="text-center text-[14px] font-extrabold text-[#111111]">
+                          {index + 1}
+                        </div>
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          value={s.weight}
+                          onChange={(e) =>
+                            updateSet(s.id, 'weight', e.target.value)
+                          }
+                          placeholder="kg"
+                          className="w-full bg-[#F4F4F5] rounded-lg py-2 px-2 text-[15px] text-[#111111] text-center border border-[#E4E4E7] focus:outline-none focus:border-[#111111]"
+                        />
+                        <input
+                          type="number"
+                          inputMode="numeric"
+                          value={s.reps}
+                          onChange={(e) =>
+                            updateSet(s.id, 'reps', e.target.value)
+                          }
+                          placeholder="回"
+                          className="w-full bg-[#F4F4F5] rounded-lg py-2 px-2 text-[15px] text-[#111111] text-center border border-[#E4E4E7] focus:outline-none focus:border-[#111111]"
+                        />
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="flex gap-2 mt-4">
+                    <button
+                      onClick={removeSet}
+                      className="flex-1 border border-[#111111] rounded-xl py-2.5 text-[13px] font-bold text-[#111111] bg-white hover:bg-[#F4F4F5] transition"
+                    >
+                      － セット削除
+                    </button>
+                    <button
+                      onClick={addSet}
+                      className="flex-1 border border-[#111111] rounded-xl py-2.5 text-[13px] font-bold text-[#111111] bg-white hover:bg-[#F4F4F5] transition"
+                    >
+                      ＋ セット追加
+                    </button>
+                  </div>
+                </div>
+
+                {/* 推定MAX */}
+                <div className="bg-white rounded-2xl p-4 mb-4 border border-[#E4E4E7]">
+                  <p className="text-[13px] font-bold text-[#111111] mb-1.5">
+                    セット別推定MAX
+                  </p>
+                  {sets.map((s, index) => {
+                    const est = estimate(s.weight, s.reps);
+                    return (
+                      <p
+                        key={s.id}
+                        className="text-[14px] text-[#111111] my-0.5"
+                      >
+                        SET {index + 1}：{est ? `${est.toFixed(1)} kg` : '未入力'}
+                      </p>
+                    );
+                  })}
+
+                  <div className="h-[1px] bg-[#E4E4E7] my-3" />
+
+                  <p className="text-[13px] text-[#555555]">
+                    今回の最高推定MAX
+                  </p>
+                  <p className="text-[28px] font-black text-[#111111] my-1">
+                    {bestMax ? bestMax.toFixed(1) : '--'} kg
+                  </p>
+                  <p className="text-[12px] text-[#555555]">
+                    Epley式・1セットごとの計算
+                  </p>
+                </div>
+
+                <button
+                  onClick={saveTraining}
+                  disabled={!exercise.trim() || validSets.length === 0}
+                  className="w-full bg-[#111111] disabled:bg-[#A1A1AA] text-white rounded-xl py-3.5 text-[15px] font-extrabold transition"
+                >
+                  記録を保存する
+                </button>
+              </div>
+            )}
+
+            {/* HISTORY画面 */}
+            {tab === 'HISTORY' && (
+              <div>
+                <h1 className="text-[26px] font-black text-[#111111]">
+                  HISTORY
+                </h1>
+                <p className="text-[13px] text-[#555555] mb-4">
+                  保存したトレーニング
+                </p>
+
+                {history.length === 0 ? (
+                  <div className="bg-white rounded-2xl p-5 border border-[#E4E4E7]">
+                    <p className="text-[13px] text-[#555555]">
+                      まだ記録がありません。TRAININGから記録してみよう！
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {history.map((record) => (
+                      <div
+                        key={record.id}
+                        className="bg-white rounded-2xl p-4 border border-[#E4E4E7]"
+                      >
+                        <p className="text-[16px] font-extrabold text-[#111111]">
+                          {record.exercise}
+                        </p>
+                        <p className="text-[12px] text-[#555555] mb-2">
+                          {record.date}
+                        </p>
+
+                        {record.sets.map((s, i) => (
+                          <p
+                            key={s.id}
+                            className="text-[14px] text-[#111111] mt-1"
+                          >
+                            SET {i + 1} {s.weight}kg × {s.reps}回
+                          </p>
+                        ))}
+
+                        <div className="h-[1px] bg-[#E4E4E7] my-3" />
+
+                        <p className="text-[12px] text-[#555555]">
+                          最高推定MAX
+                        </p>
+                        <p className="text-[24px] font-black text-[#111111]">
+                          {record.bestMax.toFixed(1)} kg
+                        </p>
+
+                        {record.memo && (
+                          <p className="text-[13px] text-[#555555] mt-2">
+                            メモ：{record.memo}
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* TOOLS画面（タイマー専用） */}
+            {tab === 'TOOLS' && (
+              <div>
+                <h1 className="text-[26px] font-black text-[#111111]">
+                  TOOLS
+                </h1>
+                <p className="text-[13px] text-[#555555] mb-4">
+                  インターバルタイマー
+                </p>
+
+                <div className="bg-white rounded-2xl p-5 border border-[#E4E4E7]">
+                  <p className="text-[13px] font-extrabold text-[#555555] tracking-wider">
+                    REST TIMER
+                  </p>
+
+                  <p className="text-[56px] font-black text-[#111111] text-center my-4 tabular-nums">
+                    {formatTime(remaining)}
+                  </p>
+
+                  <p className="text-[13px] text-[#555555] text-center mb-4">
+                    設定時間：{formatTime(duration)}
+                  </p>
+
+                  <div className="flex gap-2 mb-3">
+                    <button
+                      onClick={() => {
+                        const next = Math.max(30, duration - 30);
+                        setDuration(next);
+                        setRemaining(next);
+                        setRunning(false);
+                      }}
+                      className="flex-1 bg-[#F4F4F5] rounded-lg py-2.5 text-[14px] font-bold text-[#111111] border border-[#E4E4E7] hover:border-[#111111] transition"
+                    >
+                      － 30秒
+                    </button>
+                    <button
+                      onClick={() => {
+                        const next = duration + 30;
+                        setDuration(next);
+                        setRemaining(next);
+                        setRunning(false);
+                      }}
+                      className="flex-1 bg-[#F4F4F5] rounded-lg py-2.5 text-[14px] font-bold text-[#111111] border border-[#E4E4E7] hover:border-[#111111] transition"
+                    >
+                      ＋ 30秒
+                    </button>
+                  </div>
+
+                  <div className="flex gap-2">
+                    {!running ? (
+                      <button
+                        onClick={startTimer}
+                        className="flex-1 bg-[#111111] text-white rounded-xl py-3 text-[15px] font-extrabold"
+                      >
+                        スタート
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => setRunning(false)}
+                        className="flex-1 bg-[#555555] text-white rounded-xl py-3 text-[15px] font-extrabold"
+                      >
+                        一時停止
+                      </button>
+                    )}
+
+                    <button
+                      onClick={() => {
+                        setRunning(false);
+                        setRemaining(duration);
+                      }}
+                      className="flex-1 border border-[#111111] bg-white text-[#111111] rounded-xl py-3 text-[14px] font-bold"
+                    >
+                      リセット
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* QR画面（入退室ボタン切り替え付き） */}
+            {tab === 'QR' && (
+              <div>
+                <h1 className="text-[26px] font-black text-[#111111]">
+                  QR CODE
+                </h1>
+                <p className="text-[13px] text-[#555555] mb-4">
+                  ジム入退室用 本人確認コード
+                </p>
+
+                <div className="bg-white rounded-2xl p-5 border border-[#E4E4E7]">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-[14px] font-bold text-[#111111]">
+                      {profileName || 'ゲストユーザー'}
+                      {profileClass ? `（${profileClass}）` : ''}
+                    </p>
+                    <span
+                      className={`text-[11px] font-extrabold px-2.5 py-1 rounded-full ${
+                        gymStatus === 'IN'
+                          ? 'bg-[#111111] text-white'
+                          : 'bg-[#F4F4F5] text-[#555555] border border-[#E4E4E7]'
+                      }`}
+                    >
+                      {gymStatus === 'IN' ? '入室中' : '退室中'}
+                    </span>
+                  </div>
+
+                  {/* QRコード枠 */}
+                  <div className="flex flex-col items-center justify-center py-5">
+                    <div className="w-44 h-44 rounded-2xl border-2 border-[#111111] bg-[#F4F4F5] flex flex-col items-center justify-center p-3">
+                      <svg
+                        viewBox="0 0 100 100"
+                        className="w-28 h-28 text-[#111111]"
+                        fill="currentColor"
+                      >
+                        <rect x="10" y="10" width="25" height="25" fill="none" stroke="currentColor" strokeWidth="6" />
+                        <rect x="17" y="17" width="11" height="11" />
+                        <rect x="65" y="10" width="25" height="25" fill="none" stroke="currentColor" strokeWidth="6" />
+                        <rect x="72" y="17" width="11" height="11" />
+                        <rect x="10" y="65" width="25" height="25" fill="none" stroke="currentColor" strokeWidth="6" />
+                        <rect x="17" y="72" width="11" height="11" />
+                        <rect x="45" y="12" width="10" height="10" />
+                        <rect x="45" y="30" width="10" height="18" />
+                        <rect x="12" y="45" width="18" height="10" />
+                        <rect x="40" y="55" width="14" height="14" />
+                        <rect x="65" y="48" width="12" height="12" />
+                        <rect x="80" y="65" width="10" height="25" />
+                        <rect x="52" y="76" width="18" height="12" />
+                      </svg>
+                      <span className="text-[11px] font-bold text-[#555555] mt-2">
+                        {gymStatus === 'IN' ? 'EXIT PASS' : 'ENTRY PASS'}
+                      </span>
+                    </div>
+
+                    {lastActionTime && (
+                      <p className="text-[12px] text-[#555555] mt-3">
+                        最終操作：{lastActionTime}（{gymStatus === 'IN' ? '入室' : '退室'}）
+                      </p>
+                    )}
+                  </div>
+
+                  {/* 入退室切り替えボタン */}
+                  <div className="grid grid-cols-2 gap-2.5 mt-1 mb-4">
+                    <button
+                      onClick={() => toggleGymStatus('IN')}
+                      className={`py-3 rounded-xl text-[14px] font-extrabold transition ${
+                        gymStatus === 'IN'
+                          ? 'bg-[#111111] text-white'
+                          : 'bg-[#F4F4F5] text-[#111111] border border-[#E4E4E7] hover:border-[#111111]'
+                      }`}
+                    >
+                      入室する
+                    </button>
+                    <button
+                      onClick={() => toggleGymStatus('OUT')}
+                      className={`py-3 rounded-xl text-[14px] font-extrabold transition ${
+                        gymStatus === 'OUT'
+                          ? 'bg-[#111111] text-white'
+                          : 'bg-[#F4F4F5] text-[#111111] border border-[#E4E4E7] hover:border-[#111111]'
+                      }`}
+                    >
+                      退室する
+                    </button>
+                  </div>
+
+                  <p className="text-[12px] text-[#555555] leading-relaxed">
+                    ※ 学校のQRリーダー連携およびSupabase導入後に、リーダー読み取りや利用履歴の自動記録と連携されます。
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* ACCOUNT画面 */}
+            {tab === 'ACCOUNT' && (
+              <div>
+                <h1 className="text-[26px] font-black text-[#111111]">
+                  ACCOUNT
+                </h1>
+                <p className="text-[13px] text-[#555555] mb-4">
+                  プロフィール設定（ローカル保存）
+                </p>
+
+                <div className="bg-white rounded-2xl p-4 mb-4 border border-[#E4E4E7]">
+                  <label className="block text-[13px] font-bold text-[#111111] mb-1.5">
+                    名前
+                  </label>
+                  <input
+                    type="text"
+                    value={profileName}
+                    onChange={(e) => setProfileName(e.target.value)}
+                    placeholder="例：山田 太郎"
+                    className="w-full bg-[#F4F4F5] rounded-lg px-3 py-2.5 text-[15px] text-[#111111] mb-3 border border-[#E4E4E7] focus:outline-none focus:border-[#111111]"
+                  />
+
+                  <label className="block text-[13px] font-bold text-[#111111] mb-1.5">
+                    クラス・学年
+                  </label>
+                  <input
+                    type="text"
+                    value={profileClass}
+                    onChange={(e) => setProfileClass(e.target.value)}
+                    placeholder="例：2年3組"
+                    className="w-full bg-[#F4F4F5] rounded-lg px-3 py-2.5 text-[15px] text-[#111111] mb-3 border border-[#E4E4E7] focus:outline-none focus:border-[#111111]"
+                  />
+
+                  <div className="h-[1px] bg-[#E4E4E7] my-3" />
+
+                  <p className="text-[13px] text-[#555555]">
+                    現在の設定：{profileName || '未設定'} / {profileClass || '未設定'}
+                  </p>
+                </div>
+
+                <div className="bg-white rounded-2xl p-4 border border-[#E4E4E7]">
+                  <p className="text-[13px] font-bold text-[#111111] mb-1">
+                    アカウント連携
+                  </p>
+                  <p className="text-[13px] text-[#555555]">
+                    Supabase導入後に、新規登録・ログイン・データ同期機能が利用できるようになります。
+                  </p>
+                </div>
+              </div>
+            )}
+          </main>
+
+          {/* 下部タブバー */}
+          <nav className="flex bg-white border-t border-[#E4E4E7] py-2 shrink-0">
+            {['HOME', 'TRAINING', 'HISTORY', 'TOOLS', 'QR', 'ACCOUNT'].map(
+              (item) => {
+                const active = tab === item;
+                return (
+                  <button
+                    key={item}
+                    onClick={() => setTab(item)}
+                    className="flex-1 py-1.5 text-center"
+                  >
+                    <span
+                      className={`text-[10px] tracking-tight ${
+                        active
+                          ? 'text-[#111111] font-black'
+                          : 'text-[#555555] font-bold'
+                      }`}
+                    >
+                      {item}
+                    </span>
+                  </button>
+                );
+              }
+            )}
+          </nav>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
